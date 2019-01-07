@@ -186,10 +186,10 @@ func insertToMysql() {
 	defer stmtSelect.Close()
 
 	stmtInsert, err := db.PrepareNamed("INSERT INTO gateway_status_current " +
-		"(gtw_id, description, last_seen," +
+		"(gtw_id, description, first_seen, last_seen," +
 		"latitude, longitude, altitude, location_accuracy, location_source) " +
 		"VALUES " +
-		"(:gtw_id, :description, :last_seen," +
+		"(:gtw_id, :description, :first_seen, :last_seen," +
 		":latitude, :longitude, :altitude, :location_accuracy, :location_source)")
 	if err != nil {
 		panic(err.Error())
@@ -197,7 +197,7 @@ func insertToMysql() {
 	defer stmtInsert.Close()
 
 	stmtUpdateCoordinates, err := db.PrepareNamed("UPDATE gateway_status_current SET " +
-		"description=:description, last_seen=:last_seen," +
+		"description=:description, first_seen=:first_seen, last_seen=:last_seen," +
 		"latitude=:latitude, longitude=:longitude, altitude=:altitude, location_accuracy=:location_accuracy, location_source=:location_source " +
 		"WHERE gtw_id = :gtw_id")
 	if err != nil {
@@ -206,20 +206,20 @@ func insertToMysql() {
 	defer stmtUpdateCoordinates.Close()
 
 	stmtUpdateDescription, err := db.PrepareNamed("UPDATE gateway_status_current SET " +
-		"description=:description, last_seen=:last_seen " +
+		"description=:description, first_seen=:first_seen, last_seen=:last_seen " +
 		"WHERE gtw_id = :gtw_id")
 	if err != nil {
 		panic(err.Error())
 	}
 	defer stmtUpdateDescription.Close()
 
-	stmtUpdateLastSeen, err := db.PrepareNamed("UPDATE gateway_status_current SET " +
-		"last_seen=:last_seen " +
+	stmtUpdateSeen, err := db.PrepareNamed("UPDATE gateway_status_current SET " +
+		"first_seen=:first_seen, last_seen=:last_seen " +
 		"WHERE gtw_id = :gtw_id")
 	if err != nil {
 		panic(err.Error())
 	}
-	defer stmtUpdateLastSeen.Close()
+	defer stmtUpdateSeen.Close()
 
 	for {
 		message := <-messageChannel
@@ -280,6 +280,11 @@ func insertToMysql() {
 			log.Print("  [m] " + err.Error())
 		}
 
+		if entry.LastSeen.After(message.LastSeen.GetTime()) {
+			log.Print("  [m] Ignoring backwards jump in status time")
+			continue
+		}
+
 		if entry.GtwId == "" {
 			log.Print("  [m] Adding new gateway")
 			// The struct is empty so there was no previous entry in the database
@@ -306,12 +311,14 @@ func insertToMysql() {
 
 		} else if distanceBetweenLocationsMetres(entry.Latitude, entry.Longitude, entry.Altitude,
 			message.Location.Latitude, message.Location.Longitude, message.Location.Altitude) > 100.0 {
+			// We assume we get the statuses in chronologically
 			log.Print("  [m] Updating coordinates")
 			// Gateway moved
 			notifyGatewayMoved(message)
 
 			// Updated the coordinates
 			copyMessageToEntry(message, &entry)
+			entry.FirstSeen = entry.LastSeen // when moved the first seen time is the time the gateway move, ie. last seen
 			updateResult, err := stmtUpdateCoordinates.Exec(entry)
 			if err != nil {
 				log.Print(err.Error())
@@ -340,11 +347,11 @@ func insertToMysql() {
 				log.Printf("  [m] Updated %d rows", rowsAffected)
 			}
 
-		} else if entry.LastSeen.Before(message.LastSeen.GetTime()) {
-			log.Print("  [m] Updating last heard time")
+		} else if entry.LastSeen.Before(message.LastSeen.GetTime()) || entry.FirstSeen.After(message.LastSeen.GetTime()) {
+			log.Print("  [m] Updating last and first heard times")
 			// Only update the last_heard
 			copyMessageToEntry(message, &entry)
-			updateResult, err := stmtUpdateLastSeen.Exec(entry)
+			updateResult, err := stmtUpdateSeen.Exec(entry)
 			if err != nil {
 				log.Print(err.Error())
 			}
@@ -367,12 +374,21 @@ func insertToMysql() {
 func copyMessageToEntry(message types.GatewayStatus, entry *types.MysqlGatewayStatus) {
 	entry.GtwId = message.GtwId
 	entry.Description = message.Description
-	entry.LastSeen = message.LastSeen.GetTime()
+
 	entry.Latitude = message.Location.Latitude
 	entry.Longitude = message.Location.Longitude
 	entry.Altitude = message.Location.Altitude
 	entry.Accuracy = message.Location.Accuracy
 	entry.Source = message.Location.Source
+
+	// We assume we get the statuses in chronologically
+	if message.LastSeen.GetTime().After(entry.LastSeen) {
+		entry.LastSeen = message.LastSeen.GetTime()
+	}
+
+	if entry.FirstSeen.IsZero() {
+		entry.FirstSeen = message.LastSeen.GetTime()
+	}
 }
 
 func notifyGatewayNew(message types.GatewayStatus) {

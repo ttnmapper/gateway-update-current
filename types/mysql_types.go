@@ -6,6 +6,7 @@ type MysqlGatewayStatus struct {
 	Id          int       `db:"id"`
 	GtwId       string    `db:"gtw_id"`
 	Description string    `db:"description"`
+	FirstSeen   time.Time `db:"first_seen"`
 	LastSeen    time.Time `db:"last_seen"`
 
 	Latitude  float32 `db:"latitude"`
