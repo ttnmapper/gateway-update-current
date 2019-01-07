@@ -47,7 +47,7 @@ var myConfiguration = Configuration{
 	MysqlPassword: "password",
 	MysqlDatabase: "database",
 
-	PromethuesPort: "2114",
+	PromethuesPort: "2115",
 }
 
 func main() {
