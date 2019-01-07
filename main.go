@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 	"github.com/kellydunn/golang-geo"
@@ -471,11 +470,11 @@ func publishMovedGateways() {
 
 	for {
 		message := <-movedChannel
-		log.Printf("Publishing message")
+		log.Printf("   [A] Publishing message")
 
 		data, err := json.Marshal(message)
 		if err != nil {
-			fmt.Printf("marshal failed: %s", err)
+			log.Printf("marshal failed: %s", err)
 			continue
 		}
 
@@ -490,7 +489,7 @@ func publishMovedGateways() {
 			})
 		failOnError(err, "Failed to publish a gateway")
 
-		log.Printf("Published: %s", data)
+		log.Printf("   [A] Published: %s", data)
 	}
 }
 
@@ -519,11 +518,11 @@ func publishNewGateways() {
 
 	for {
 		message := <-newChannel
-		log.Printf("Publishing message")
+		log.Printf("   [A] Publishing message")
 
 		data, err := json.Marshal(message)
 		if err != nil {
-			fmt.Printf("marshal failed: %s", err)
+			log.Printf("marshal failed: %s", err)
 			continue
 		}
 
@@ -538,6 +537,6 @@ func publishNewGateways() {
 			})
 		failOnError(err, "Failed to publish a gateway")
 
-		log.Printf("Published: %s", data)
+		log.Printf("   [A] Published: %s", data)
 	}
 }
